@@ -1,4 +1,4 @@
 # Voxel Space
 
-Based on [Sebastian Macke's VoxelSapce demo](https://github.com/s-macke/VoxelSpace)
+Based on [John Hawthorn's Vancouver Lidar VoxelSapce demo](https://github.com/jhawthorn/VoxelSpace)
 

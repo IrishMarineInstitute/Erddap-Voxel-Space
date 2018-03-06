@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vancouver Lidar Voxel Space</title>
+    <title>Erddap Voxel Space</title>
     <meta charset="UTF-8">
-    <meta name="description" content="Vancouver Lidar 3d Voxel Space">
-    <meta name="author" content="John Hawthorn and Sebastian Macke">
-    <meta name="keywords" content="Vancouver, Voxel, VoxelSpace, Voxel Space, Comanche, landscape, rendering">
+    <meta name="description" content="Erddap 3d Voxel Space">
+    <meta name="author" content="Irish Marine Institute, John Hawthorn and Sebastian Macke">
+    <meta name="keywords" content="Erddap, Voxel, VoxelSpace, Voxel Space, Comanche, landscape, rendering">
+    <script src="hillshade.js"></script>
     <style>
         html, body {margin: 0; height: 100%; overflow: hidden}
         canvas { width: 100%; height: 100%; }
@@ -47,7 +48,7 @@
 
 <label for="distancerange">Distance</label>
 <input id="distancerange" type="range" min="100" max="2000" step="1" onchange="camera.distance = this.value">
-<a href="https://github.com/jhawthorn/VoxelSpace">Project Information</a>
+<a href="https://github.com/IrishMarineInstitute/Erddap-Voxel-Space">Project Information</a>
 </div>
 
 <canvas id="myCanvas" width="800" height="400">
@@ -63,12 +64,12 @@
 
 var camera =
 {
-    x:        17713., // x position on the map
-    y:        11046., // y position on the map
+    x:        512., // x position on the map
+    y:        512., // y position on the map
     height:   64*256., // height of the camera
     angle:      0., // direction of the camera
     horizon:  100., // horizon position (look up and down)
-    distance: 800   // distance of map
+    distance: 256   // distance of map
 };
 
 // ---------------------------------------------
@@ -76,10 +77,124 @@ var camera =
 
 var map =
 {
-    width:    2048,
-    height:   2048,
-    shift:    11,  // power of two: 2^10 = 1024
+    width:    1024,
+    height:   1024,
+    shift:    10,  // power of two: 2^10 = 1024
+    hillshade: true,
 };
+var erddap = {
+  base_url: "http://oos.soest.hawaii.edu/erddap/griddap/pibhmc_bathy_5m_marpi",
+  latitude: "latitude",
+  longitude: "longitude",
+  altitude: "elev",
+  colorBarMin: -500,
+  colorBarMax: 0,
+  colorBarContinuity:"Continuous",//"Discrete", // or "Continuous"
+  lat_min: 15.37938068011533,
+  lat_max: 15.459452398919511,
+  lat_start: 15.4,
+  lat_step: -.005, //.3333333,
+  lon_start: 145.86,
+  lon_min: 145.82171772439233,
+  lon_max: 145.90769711825018,
+  lon_step: .005,
+  lon_dir: 1,
+}
+if (false) erddap = {
+  base_url: "http://oos.soest.hawaii.edu/erddap/griddap/pibhmc_bathy_5m_palmyra",
+  latitude: "latitude",
+  longitude: "longitude",
+  altitude: "elev",
+  colorBarMin: -300,
+  colorBarMax: 0,
+  colorBarContinuity:"Continuous",//"Discrete", // or "Continuous"
+  lat_min: 5.855686191507068,
+  lat_max: 5.903523003976747,
+  lat_start: 5.87,
+  lat_step: -.01, //.3333333,
+  lon_start: -162.08,
+  lon_min: -162.1769791255366,
+  lon_max: -161.99516310080529,
+  lon_step: .01,
+}
+
+var getErddapExtents = function(x,y){
+  var extents = {
+    lat:{
+      min: erddap.lat_start + y * erddap.lat_step,
+      max: erddap.lat_start + y * erddap.lat_step + erddap.lat_step
+    },
+    lon:{
+      min: erddap.lon_start + x * erddap.lon_step,
+      max: erddap.lon_start + x * erddap.lon_step + erddap.lon_step
+    }
+  }
+  if(extents.lat.min > extents.lat.max){
+    var tmp = extents.lat.min;
+    extents.lat.min = extents.lat.max;
+    extents.lat.max = tmp;
+  }
+  if(extents.lon.min > extents.lon.max){
+    var tmp = extents.lon.min;
+    extents.lon.min = extents.lon.max;
+    extents.lon.max = tmp;
+  }
+  return extents;
+}
+
+/*
+ * Return zero, one or more image urls for the given position
+ */
+var getUrlsForImage = function(x,y){
+  var e = getErddapExtents(x,y);
+  if(e.lon.max < erddap.lon_min
+     || e.lon.min > erddap.lon_max
+     || e.lat.max < erddap.lat_min
+     || e.lat.min > erddap.lat_max){
+       return null;
+     }
+  var colorBarContinuity = erddap.colorBarContinuity == "Discrete" ? "D":"C";
+  var hash = "#"+x+","+y;
+  var urls = [];
+  ["","BlackWhite"].forEach(function(colorBar){
+    var url = erddap.base_url + ".transparentPng?" + erddap.altitude;
+    url += "[("+e.lat.min+"):("+e.lat.max+")][("+e.lon.min+"):("+e.lon.max+")]";
+    url += "&.draw=surface&.vars="+erddap.longitude+"|"+erddap.latitude+"|"+erddap.altitude;
+    url += "&.colorBar="+colorBar;
+    url += "|"+colorBarContinuity+"|Linear|40|";
+    url += erddap.colorBarMin+"|"+erddap.colorBarMax;
+    url += "&.bgColor=0xffccccff";
+    url += "&.size="+map.width+"|"+map.height+hash;
+
+
+    // url = erddap.base_url_wms + "/request?&service=WMS&request=GetMap&layers=";
+    // url += erddap.wms_layers;
+    // url += "&styles=&format=image%2Fpng&transparent=true&version=1.3.0&bgcolor=0x808080";
+    // url += "&height="+map.height+"&width="+map.width+"&crs=EPSG%3A4326";
+    // url+= "&bbox="+lat_low+","+lon_low+","+lat_high+","+lon_high+hash;
+
+    urls.push(url);
+  })
+  return urls;
+}
+
+function imagesToTile(images,x,y) {
+  var datac = images[0];
+  var datah = images.length == 1? images[0]: images[1];
+  var tile = {
+        altitude: new Uint16Array(map.width*map.height), // 1024 * 1024 byte array with height information
+        color:    new Uint32Array(map.width*map.height), // 1024 * 1024 int array with RGB colors
+        erddap: getErddapExtents(x,y),
+        x: x,
+        y: y
+  };
+  for(var i=0; i<map.width*map.height; i++)
+  {
+    tile.altitude[i] = datah[i<<2];
+    tile.color[i] = 0xFF000000 | (datac[(i<<2) + 2] << 16) | (datac[(i<<2) + 1] << 8) | datac[(i<<2) + 0];
+  }
+  return tile;
+}
 
 var tiles = [];
 
@@ -96,7 +211,7 @@ var screendata =
     buf8:      null, // the same array but with bytes
     buf32:     null, // the same array but with 32-Bit words
 
-    backgroundcolor: 0xFF333333
+    backgroundcolor: 0xFF990000
 };
 
 // ---------------------------------------------
@@ -122,65 +237,57 @@ var time = new Date().getTime();
 var timelastframe = new Date().getTime();
 var frames = 0;
 
-function getTile(x, y) {
-    if(x < 0 || y < 0)
-        return null;
-    x = x / map.width | 0;
-    y = y / map.height | 0;
+function getTile(xx, yy) {
+    var x = Math.floor(xx / map.width);
+    var y = Math.floor(yy / map.height);
     if(tiles[y] === undefined)
         return null;
-
     return tiles[y][x];
 }
 
 function ClearFar() {
-  var lowx = (camera.x - camera.distance * 2) / map.width | 0;
-  var lowy = (camera.y - camera.distance * 2) / map.height | 0;
-  var highx = (camera.x + camera.distance * 2) / map.width | 0;
-  var highy = (camera.y + camera.distance * 2) / map.height | 0;
+  var lowx = Math.floor((camera.x - camera.distance * 2) / map.width);
+  var lowy = Math.floor((camera.y - camera.distance * 2) / map.height);
+  var highx = Math.floor((camera.x + camera.distance * 2) / map.width);
+  var highy = Math.floor((camera.y + camera.distance * 2) / map.height);
 
-  for(var y = 0; y < lowy; y++)
-    delete tiles[y];
-
-  for(var y = highy+1; y < tiles.length; y++)
-    delete tiles[y];
-
-  for(var y = lowy; y <= highy; y++) {
-    if(tiles[y] === undefined)
-      continue;
-
-    for(var x = 0; x < lowx; x++)
-      delete tiles[y][x];
-    for(var x = highx+1; x < tiles[y].length; x++)
-      delete tiles[y][x];
-  }
+  Object.keys(tiles).map(function(y){return parseInt(y);}).forEach(function(y){
+    if(y < lowy || y > highy){
+      delete tiles[y];
+    }else{
+       Object.keys(tiles[y]).map(function(x){return parseInt(x);}).forEach(
+          function(x){
+            if(x < lowx || x > highx) delete tiles[y][x];
+          });
+    }
+  });
 }
 
 var loading = [];
 
 function FetchNear() {
 
-  var lowx = (camera.x - camera.distance) / map.width | 0;
-  var lowy = (camera.y - camera.distance) / map.height | 0;
-  var highx = (camera.x + camera.distance) / map.width | 0;
-  var highy = (camera.y + camera.distance) / map.height | 0;
+  var lowx = Math.floor((camera.x - camera.distance) / map.width);
+  var lowy = Math.floor((camera.y - camera.distance) / map.height);
+  var highx = Math.floor((camera.x + camera.distance) / map.width);
+  var highy = Math.floor((camera.y + camera.distance) / map.height);
 
   for(var y = lowy; y <= highy; y++) {
     for(var x = lowx; x <= highx; x++) {
       if(tiles[y] && tiles[y][x]) {
         continue;
       }
-      var str = "" + y + "," + x;
-      if(loading.indexOf(str) < 0) {
-        loading.push(str);
-        console.log("loading tile " + str);
+      var urls = getUrlsForImage(x,y);
+      urls = urls ? Array.isArray(urls)? urls : [urls] : null;
+      if(urls == null || urls.length == 0) continue;
+      if(loading.indexOf(urls[0]) < 0) {
+        loading.push(urls[0]);
+        console.log("loading tile " + urls[0]);
 
-        var e = 4830 + x*10;
-        var n = 54620 - y*10;
-        LoadMap(x, y, "CoV_" + e + "E_" + n + "N", function() {
-          var idx = loading.indexOf(str);
+        LoadMap(x, y, urls, function(urls) {
+          var idx = loading.indexOf(urls[0]);
           loading.splice(idx, 1);
-        });
+        }.bind(null,urls));
       }
     }
   }
@@ -346,9 +453,9 @@ function DetectKeysUp(e)
         break;
     case 82:    // r
         input.updown = 0;
+        input.updown = 0;
         break;
     case 70:    // f
-        input.updown = 0;
         break;
     case 69:    // e
         input.lookup = false;
@@ -441,8 +548,8 @@ function Render()
             if(tile) {
                 var mapoffset = ((Math.floor(ply) & mapwidthperiod) << map.shift) + (Math.floor(plx) & mapheightperiod)|0;
                 var heightonscreen = (camera.height - tile.altitude[mapoffset]) * invz + camera.horizon|0;
+                DrawVerticalLine(i, heightonscreen|0, hiddeny[i], tile.color[mapoffset]);
                 if (heightonscreen < hiddeny[i]) {
-                  DrawVerticalLine(i, heightonscreen|0, hiddeny[i], tile.color[mapoffset]);
                   hiddeny[i] = heightonscreen;
                 }
             }
@@ -500,6 +607,9 @@ function DownloadImagesAsync(urls, OnSuccess) {
         result[i] = tempcontext.getImageData(0, 0, map.width, map.height).data;
         pending--;
         if (pending === 0) {
+            if(map.hillshade){
+              result[0] = getHillshadedImageData(result[0],(result.length === 1 ? result[0]: result[1]),map.width,map.height);
+            }
             setTimeout(OnSuccess, 0);
         }
     }
@@ -507,42 +617,27 @@ function DownloadImagesAsync(urls, OnSuccess) {
     urls.forEach(function(url, i) {
         var image = new Image();
         //image.addEventListener("load", function() {
-        image.onload = function() {
-            setTimeout(function() { onLoad(image, i) }, 0);
-        };
-        image.src = url;
+        image.onload = onLoad.bind(null,image,i);
         image.crossOrigin = "Anonymous";
+        image.src = url;
     });
 }
 
-var tile_basepath = "http://vancouver-heightmaps.s3.amazonaws.com/heightmaps/"
 
-function LoadMap(x, y, file, callback)
+function LoadMap(x, y, urls, callback)
 {
-    DownloadImagesAsync([tile_basepath + file + ".png"], function(images) {
+    DownloadImagesAsync(urls, function(x,y,images) {
         console.log("loaded " + x + ", " + y)
         if(!tiles[y])
             tiles[y] = [];
-        tiles[y][x] = imageToTile(images[0]);
+        tiles[y][x] = imagesToTile(images,x,y);
         if(callback) {
           callback();
         }
         Draw();
-    });
+    }.bind(null,x,y));
 }
 
-function imageToTile(datah) {
-    var tile = {
-        altitude: new Uint16Array(2048*2048), // 1024 * 1024 byte array with height information
-        color:    new Uint32Array(2048*2048) // 1024 * 1024 int array with RGB colors
-    };
-    for(var i=0; i<map.width*map.height; i++) {
-        tile.altitude[i] = datah[(i<<2)+1]*256 + datah[(i<<2)+2];
-        var c = datah[(i<<2)];
-        tile.color[i] = 0xFF000000 | c << 16 | c << 8 | c;
-    }
-    return tile;
-}
 
 function OnResizeWindow()
 {
