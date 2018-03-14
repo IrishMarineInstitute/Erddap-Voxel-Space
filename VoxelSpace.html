@@ -66,10 +66,10 @@ var camera =
 {
     x:        512., // x position on the map
     y:        512., // y position on the map
-    height:   64*256., // height of the camera
+    height:   80., // height of the camera
     angle:      0., // direction of the camera
     horizon:  100., // horizon position (look up and down)
-    distance: 256   // distance of map
+    distance: 800,//256   // distance of map
 };
 
 // ---------------------------------------------
@@ -81,6 +81,7 @@ var map =
     height:   1024,
     shift:    10,  // power of two: 2^10 = 1024
     hillshade: true,
+    zfactor: 400
 };
 var erddap = {
   erddap: "http://oos.soest.hawaii.edu/erddap/",
@@ -119,6 +120,26 @@ if (false) erddap = {
   lon_max: -161.99516310080529,
   lon_step: .01,
 }
+if(false) erddap = {
+  erddap: "http://10.11.100.93/erddap/",
+  dataset: "infomar_f6f1_8398_3aed",
+  latitude: "latitude",
+  longitude: "longitude",
+  altitude: "z",
+  colorBarMin: -60,
+  colorBarMax: 20,
+  colorBarContinuity:"Continuous",//"Discrete", // or "Continuous"
+  lat_min: 5879070.0,
+  lat_max: 5883386.0,
+  lat_start: 5879244,
+  lat_step: -394, //.3333333,
+  lon_start: 458946,
+  lon_min: 457846.0,
+  lon_max: 460842.0,
+  lon_step: 394,
+  lat_stride: ":1:",
+  lon_stride: ":1:"
+}
 
 var getErddapExtents = function(x,y){
   var extents = {
@@ -131,6 +152,8 @@ var getErddapExtents = function(x,y){
       max: erddap.lon_start + x * erddap.lon_step + erddap.lon_step
     }
   }
+  erddap.lat_stride = erddap.lon_stride || ":";
+  erddap.lon_stride = erddap.lon_stride || ":";
   if(extents.lat.min > extents.lat.max){
     var tmp = extents.lat.min;
     extents.lat.min = extents.lat.max;
@@ -159,14 +182,15 @@ var getUrlsForImage = function(x,y){
   var hash = "#"+x+","+y;
   var urls = [];
   ["","BlackWhite"].forEach(function(colorBar){
-    var url = erddap.erddap+"/griddap/"+erddap.dataset + ".transparentPng?" + erddap.altitude;
+    var url = erddap.erddap+"griddap/"+erddap.dataset + ".transparentPng?" + erddap.altitude;
+    //url += "[("+e.lat.min+")"+erddap.lat_stride+"("+e.lat.max+")][("+e.lon.min+")"+erddap.lon_stride+"("+e.lon.max+")]";
     url += "[("+e.lat.min+"):("+e.lat.max+")][("+e.lon.min+"):("+e.lon.max+")]";
-    url += "&.draw=surface&.vars="+erddap.longitude+"|"+erddap.latitude+"|"+erddap.altitude;
+    url += "&.draw=surface&.vars="+erddap.longitude+"%7C"+erddap.latitude+"%7C"+erddap.altitude;
     url += "&.colorBar="+colorBar;
-    url += "|"+colorBarContinuity+"|Linear|40|";
-    url += erddap.colorBarMin+"|"+erddap.colorBarMax;
+    url += "%7C"+colorBarContinuity+"%7CLinear%7C40%7C";
+    url += erddap.colorBarMin+"%7C"+erddap.colorBarMax;
     url += "&.bgColor=0xffccccff";
-    url += "&.size="+map.width+"|"+map.height+hash;
+    url += "&.size="+map.width+"%7C"+map.height+hash;
 
 
     // url = erddap.dataset_wms + "/request?&service=WMS&request=GetMap&layers=";
@@ -184,7 +208,7 @@ function imagesToTile(images,x,y) {
   var datac = images[0];
   var datah = images.length == 1? images[0]: images[1];
   var tile = {
-        altitude: new Uint16Array(map.width*map.height), // 1024 * 1024 byte array with height information
+        altitude: new Uint8Array(map.width*map.height), // 1024 * 1024 byte array with height information
         color:    new Uint32Array(map.width*map.height), // 1024 * 1024 int array with RGB colors
         // for debug...
         erddap: getErddapExtents(x,y),
@@ -193,8 +217,8 @@ function imagesToTile(images,x,y) {
   };
   for(var i=0; i<map.width*map.height; i++)
   {
-    tile.altitude[i] = datah[i<<2];
-    tile.color[i] = 0xFF000000 | (datac[(i<<2) + 2] << 16) | (datac[(i<<2) + 1] << 8) | datac[(i<<2) + 0];
+    tile.altitude[i] = datah[i<<2] ;
+    tile.color[i] = (0xFF000000 | (datac[(i<<2) + 2] << 16) | (datac[(i<<2) + 1] << 8) | datac[(i<<2) + 0]) || 0xffff;
   }
   return tile;
 }
@@ -249,10 +273,11 @@ function getTile(xx, yy) {
 }
 
 function ClearFar() {
-  var lowx = Math.floor((camera.x - camera.distance * 2) / map.width);
-  var lowy = Math.floor((camera.y - camera.distance * 2) / map.height);
-  var highx = Math.floor((camera.x + camera.distance * 2) / map.width);
-  var highy = Math.floor((camera.y + camera.distance * 2) / map.height);
+  var far = 3;
+  var lowx = Math.floor((camera.x - camera.distance * far) / map.width);
+  var lowy = Math.floor((camera.y - camera.distance * far) / map.height);
+  var highx = Math.floor((camera.x + camera.distance * far) / map.width);
+  var highy = Math.floor((camera.y + camera.distance * far) / map.height);
 
   Object.keys(tiles).map(function(y){return parseInt(y);}).forEach(function(y){
     if(y < lowy || y > highy){
@@ -269,11 +294,12 @@ function ClearFar() {
 var loading = [];
 
 function FetchNear() {
+  var near = 2.0;
 
-  var lowx = Math.floor((camera.x - camera.distance) / map.width);
-  var lowy = Math.floor((camera.y - camera.distance) / map.height);
-  var highx = Math.floor((camera.x + camera.distance) / map.width);
-  var highy = Math.floor((camera.y + camera.distance) / map.height);
+  var lowx = Math.floor((camera.x - camera.distance * near) / map.width);
+  var lowy = Math.floor((camera.y - camera.distance * near) / map.height);
+  var highx = Math.floor((camera.x + camera.distance * near) / map.width);
+  var highy = Math.floor((camera.y + camera.distance * near) / map.height);
 
   for(var y = lowy; y <= highy; y++) {
     for(var x = lowx; x <= highx; x++) {
@@ -544,7 +570,7 @@ function Render()
         var dy = (pry - ply) / screenwidth;
         plx += camera.x;
         ply += camera.y;
-        var invz = 1. / z * 4.;
+        var invz = 1. / z * (.0 + map.zfactor || 240.);
         for(var i=0; i<screenwidth|0; i=i+1|0)
         {
             var tile = getTile(plx, ply);
@@ -621,7 +647,7 @@ function DownloadImagesAsync(urls, OnSuccess) {
         var image = new Image();
         //image.addEventListener("load", function() {
         image.onload = onLoad.bind(null,image,i);
-        image.crossOrigin = "Anonymous";
+        image.crossOrigin = "anonymous";
         image.src = url;
     });
 }
